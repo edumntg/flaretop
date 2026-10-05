@@ -1,0 +1,23 @@
+[package]
+name = "flaretop-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cloudflare API client, auth and I/O actor for flaretop (no TUI dependencies)"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+tokio-tungstenite.workspace = true
+futures-util = "0.3"
+toml.workspace = true
+dirs.workspace = true
+bytes = "1"
+urlencoding = "2"

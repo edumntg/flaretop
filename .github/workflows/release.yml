@@ -1,0 +1,117 @@
+name: Release
+
+# Releases are manual: tag and push, e.g.
+#   git tag v0.3.0 && git push origin v0.3.0
+# The version job guards against re-publishing an already-released version.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      exists: ${{ steps.v.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} -p flaretop
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          NAME="flaretop-${VERSION}-${{ matrix.target }}"
+          mkdir "$NAME"
+          cp "target/${{ matrix.target }}/release/flaretop" README.md "$NAME/"
+          tar czf "$NAME.tar.gz" "$NAME"
+          shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${{ needs.version.outputs.version }}"
+          $name = "flaretop-$version-${{ matrix.target }}"
+          New-Item -ItemType Directory -Path $name | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/flaretop.exe", "README.md" $name
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+          (Get-FileHash "$name.zip" -Algorithm SHA256).Hash + "  $name.zip" | Out-File "$name.zip.sha256" -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            flaretop-*.tar.gz*
+            flaretop-*.zip*
+
+  release:
+    name: publish GitHub release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          files: |
+            flaretop-*.tar.gz*
+            flaretop-*.zip*
+          generate_release_notes: true

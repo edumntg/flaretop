@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = ["flaretop-core", "flaretop"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/edumntg/flaretop"
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "macros", "sync", "time", "net"] }
+# reqwest 0.13 defaults to aws-lc-rs; we want ring (smaller, builds on every target without cmake/nasm).
+# "rustls-no-provider" + rustls/ring + rustls::crypto::ring::default_provider().install_default() at startup.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "gzip", "brotli", "json", "multipart", "stream", "query"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+rusty-s3 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.8"
+dirs = "6"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "z"
+panic = "abort"
